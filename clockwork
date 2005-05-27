@@ -1,0 +1,236 @@
+#! /bin/bash
+
+set -e
+
+unset LANG
+
+LOGFILE=~/.clockwork
+DATEFORMAT="day=%Y-%m-%d"
+WEEKFORMAT="week=%Y-%W"
+MONTHFORMAT="month=%Y-%m"
+TAGFORMAT="%s $MONTHFORMAT;$WEEKFORMAT;$DATEFORMAT;hour=%H:%M"
+WORKDAY_SECONDS=14760 # 22-Stunden-Woche
+
+function printerror() 
+{
+  echo "[$0] $1" >&2
+  exit 1
+}
+
+function read_log_file() 
+{
+  grep -v "^#" $LOGFILE
+}
+
+function filter_times() 
+{
+  grep -E "^(start|stop)"
+}
+
+function filter_debts() 
+{
+  grep "debt"
+}
+
+function howlong() 
+{
+  total_seconds=0
+  last_type="stop"
+  last_start=0
+  while read type seconds rest; do
+    case $type in
+      start)
+        if test "x$last_type" = "xstart"; then
+	  printerror "two subsequent starts"
+	fi
+	last_start=$seconds
+        ;;
+      stop)
+        if test "x$last_type" = "xstop"; then
+	  printerror "two subsequent stops"
+	fi
+	total_seconds=$((total_seconds+seconds-last_start))
+        ;;
+      *) 
+        printerror "$type: invalid type"
+      ;;
+    esac
+    last_type="$type"
+  done
+  if test "x$last_type" = "xstart"; then
+    echo "[$0] warning: missing a stop, assuming now" 1>&2
+    now=`date +%s`
+    total_seconds=$((now-last_start + total_seconds))
+  fi
+  echo $total_seconds
+}
+
+function report() 
+{
+  total_seconds=0
+  last_type="stop"
+  last_start=0
+  while read type seconds rest; do
+    case $type in
+      start)
+        if test "x$last_type" = "xstart"; then
+	  printerror "two subsequent starts"
+	fi
+	last_start=$seconds
+        ;;
+      stop)
+        if test "x$last_type" = "xstop"; then
+	  printerror "two subsequent stops"
+	fi
+	this_seconds=$((seconds-last_start))
+	total_seconds=$((total_seconds+this_seconds))
+	start_formatted=`date "+%a %d.%m. %H:%M" --date="1970-01-01 00:00:00 UTC +$last_start seconds"`
+	end_formatted=`date "+%a %d.%m. %H:%M" --date="1970-01-01 00:00:00 UTC +$seconds seconds"`
+	this_formatted=`echo $this_seconds | split_time`
+	echo "$start_formatted - $end_formatted = $this_formatted"
+        ;;
+      *) 
+        printerror "$type: invalid type"
+      ;;
+    esac
+    last_type="$type"
+  done
+  if test "x$last_type" = "xstart"; then
+    echo "[$0] warning: missing a stop, assuming now" 1>&2
+    now=`date +%s`
+    total_seconds=$((now-last_start + total_seconds))
+  fi
+  total_formatted=`echo $total_seconds | split_time`
+  echo
+  echo "TOTAL: $total_formatted"
+}
+
+function split_time() {
+  read total_seconds
+  if test $((total_seconds < 0)) = "1"; then
+    total_seconds=$((-total_seconds))
+    echo -n "negative "
+  fi
+  
+  if ! test "x$1" == "x--nodays"; then
+      workdays=$((total_seconds / WORKDAY_SECONDS))
+      total_seconds=$((total_seconds-workdays*WORKDAY_SECONDS))
+  else
+      workdays=0
+  fi
+  hours=$((total_seconds / 3600 ))
+  total_seconds=$((total_seconds-hours*3600))
+  minutes=$((total_seconds / 60 ))
+  total_seconds=$((total_seconds-minutes*60))
+  if ! test x$workdays = "x0"; then
+    echo -n "$workdays days "
+  fi
+  if ! test x$hours = "x0"; then
+    echo -n "$hours h "
+  fi
+  if ! test x$minutes = "x0"; then
+    echo -n "$minutes min "
+  fi
+  if ! test x$total_seconds = "x0"; then
+    echo -n "$total_seconds sec "
+  fi
+}
+
+case "$1" in
+  start|stop)
+    if ! test "x$2" = "x"; then 
+      echo "# $2" >> $LOGFILE
+    fi
+    date "+$1 $TAGFORMAT" >> $LOGFILE
+    ;;
+  startat)
+    if ! test "x$3" = "x"; then 
+      echo "# $3" >> $LOGFILE
+    fi
+    date --date="$2" "+start $TAGFORMAT" >> $LOGFILE
+    ;;
+  stopat)
+    if ! test "x$3" = "x"; then 
+      echo "# $3" >> $LOGFILE
+    fi
+    date --date="$2" "+stop $TAGFORMAT" >> $LOGFILE
+    ;;
+  indebt)
+    date "+debt $DATEFORMAT;dayofweek=%a;$WEEKFORMAT;$MONTHFORMAT" >> $LOGFILE
+    ;;
+  howlong)
+    month_filter="`date "+$MONTHFORMAT"`"
+    week_filter="`date "+$WEEKFORMAT"`"
+    today_filter="`date "+$DATEFORMAT"`"
+    total_work=`read_log_file | filter_times | howlong`
+    month_work=`read_log_file | filter_times | grep $month_filter | howlong`
+    week_work=`read_log_file | filter_times | grep $week_filter | howlong`
+
+    week_debts=`read_log_file | filter_debts | grep $week_filter | wc -l`
+    month_debts=`read_log_file | filter_debts | grep $month_filter | wc -l`
+    total_debts=`read_log_file | filter_debts | wc -l`
+    week_debt_time=$((week_debts*WORKDAY_SECONDS))
+    month_debt_time=$((month_debts*WORKDAY_SECONDS))
+    total_debt_time=$((total_debts*WORKDAY_SECONDS))
+
+    echo -n "time total           : "
+    echo $total_work | split_time
+    echo
+    echo -n "time this month      : "
+    echo $month_work | split_time
+    echo
+    echo -n "time this week       : "
+    echo $week_work | split_time
+    echo
+    echo
+
+    echo -n "debt total / left    : "
+    echo $total_debt_time | split_time
+    echo -n "/ "
+    echo $((total_debt_time-total_work)) | split_time
+    echo
+
+    echo -n "debt month / left    : "
+    echo $month_debt_time | split_time
+    echo -n "/ "
+    echo $((month_debt_time-month_work)) | split_time
+    echo
+
+    echo -n "debt week / left     : "
+    echo $week_debt_time | split_time
+    echo -n "/ "
+    echo $((week_debt_time-week_work)) | split_time
+    echo
+    ;;
+  report)
+    if test "x$2" = "x"; then
+      echo "------------------------------------------------------------"
+      echo "Work time report"
+      echo "------------------------------------------------------------"
+      read_log_file | filter_times | report
+    else
+      echo "------------------------------------------------------------"
+      echo "Work time report for the month of"
+      date "+%B %Y" --date="$2/1"
+      echo "------------------------------------------------------------"
+      formatted_month=`printf %02d $2`
+      read_log_file | filter_times | grep "month=$formatted_month" | report || true
+    fi
+    echo
+    WORKDAY_LENGTH=`echo $WORKDAY_SECONDS | split_time --nodays`
+    WORKWEEK_LENGTH=`echo $((5*WORKDAY_SECONDS)) | split_time --nodays`
+    echo "One workday is $WORKDAY_LENGTH."
+    echo "Consequently, one workweek is $WORKWEEK_LENGTH."
+    ;;
+  *) 
+    echo "$0 <command> [options]"
+    echo "where <command> is one of the following:"
+    echo "  start [tag]"
+    echo "  stop [tag]"
+    echo "  startat time [tag]"
+    echo "  stopat time [tag]"
+    echo "  howlong"
+    echo "  indebt"
+    echo "  report [<month>]"
+    ;;
+esac
