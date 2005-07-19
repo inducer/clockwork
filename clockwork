@@ -3,6 +3,7 @@
 set -e
 
 unset LANG
+EPOCH="1970-01-01 00:00:00 UTC"
 
 LOGFILE=~/.clockwork
 DATEFORMAT="day=%Y-%m-%d"
@@ -37,17 +38,19 @@ function howlong()
   total_seconds=0
   last_type="stop"
   last_start=0
+  last_start_txt="beginning"
   while read type seconds rest; do
     case $type in
       start)
         if test "x$last_type" = "xstart"; then
-	  printerror "two subsequent starts"
+	  printerror "two subsequent starts near $last_start_txt"
 	fi
 	last_start=$seconds
+        last_start_txt=`date --date="$EPOCH + $last_start seconds"`
         ;;
       stop)
         if test "x$last_type" = "xstop"; then
-	  printerror "two subsequent stops"
+	  printerror "two subsequent stops near $last_start_txt"
 	fi
 	total_seconds=$((total_seconds+seconds-last_start))
         ;;
@@ -84,8 +87,8 @@ function report()
 	fi
 	this_seconds=$((seconds-last_start))
 	total_seconds=$((total_seconds+this_seconds))
-	start_formatted=`date "+%a %d.%m. %H:%M" --date="1970-01-01 00:00:00 UTC +$last_start seconds"`
-	end_formatted=`date "+%a %d.%m. %H:%M" --date="1970-01-01 00:00:00 UTC +$seconds seconds"`
+	start_formatted=`date "+%a %d.%m. %H:%M" --date="$EPOCH +$last_start seconds"`
+	end_formatted=`date "+%a %d.%m. %H:%M" --date="$EPOCH +$seconds seconds"`
 	this_formatted=`echo $this_seconds | split_time`
 	echo "$start_formatted - $end_formatted = $this_formatted"
         ;;
