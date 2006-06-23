@@ -10,7 +10,7 @@ DATEFORMAT="day=%Y-%m-%d"
 WEEKFORMAT="week=%Y-%W"
 MONTHFORMAT="month=%Y-%m"
 TAGFORMAT="%s $MONTHFORMAT;$WEEKFORMAT;$DATEFORMAT;hour=%H:%M"
-WORKDAY_SECONDS=14760 # 22-Stunden-Woche
+WORKDAY_SECONDS=30600 # 8.5h/day
 
 function printerror() 
 {
@@ -168,6 +168,7 @@ case "$1" in
     total_work=`read_log_file | filter_times | howlong`
     month_work=`read_log_file | filter_times | grep $month_filter | howlong`
     week_work=`read_log_file | filter_times | grep $week_filter | howlong`
+    day_work=`read_log_file | filter_times | grep $today_filter | howlong`
 
     week_debts=`read_log_file | filter_debts | grep $week_filter | wc -l`
     month_debts=`read_log_file | filter_debts | grep $month_filter | wc -l`
@@ -203,6 +204,12 @@ case "$1" in
     echo $week_debt_time | split_time
     echo -n "/ "
     echo $((week_debt_time-week_work)) | split_time
+    echo
+
+    echo -n "debt day / left      : "
+    echo $WORKDAY_SECONDS | split_time
+    echo -n "/ "
+    echo $((WORKDAY_SECONDS-day_work)) | split_time
     echo
     ;;
   report)
