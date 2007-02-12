@@ -10,7 +10,7 @@ DATEFORMAT="day=%Y-%m-%d"
 WEEKFORMAT="week=%Y-%W"
 MONTHFORMAT="month=%Y-%m"
 TAGFORMAT="%s $MONTHFORMAT;$WEEKFORMAT;$DATEFORMAT;hour=%H:%M"
-WORKDAY_SECONDS=30600 # 8.5h/day
+WORKDAY_SECONDS=306000000 # 8.5h/day
 
 function printerror() 
 {
@@ -220,11 +220,9 @@ case "$1" in
       read_log_file | filter_times | report
     else
       echo "------------------------------------------------------------"
-      echo "Work time report for the month of"
-      date "+%B %Y" --date="$2/1"
+      echo "Work time report for $2"
       echo "------------------------------------------------------------"
-      formatted_month=`printf %02d $2`
-      read_log_file | filter_times | grep "month=$formatted_month" | report || true
+      read_log_file | filter_times | grep "$2" | report || true
     fi
     echo
     WORKDAY_LENGTH=`echo $WORKDAY_SECONDS | split_time --nodays`
